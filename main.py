@@ -5,39 +5,24 @@ from time import time
 
 
 def load_AD_opt_model(args):
-    if args['policy'] == 'opt' or args['policy'] == 'opt_t_const':
+    if args['policy'] == 'opt':
         from OPT.AD_decision import Opt
         AD_opt = Opt(args)
-    elif args['policy'] == 'opt-saa':
-        from OPT_SAA.AD_decision import Opt_SAA
-        AD_opt = Opt_SAA(args)
-    elif args['policy'] == 'alt1':
-        from alt1.AD_decision import alt1
-        AD_opt = alt1(args)
-    elif args['policy'] == 'alt2':
-        from alt2.AD_decision import alt2
-        AD_opt = alt2(args)
     else:
         raise Exception("policy name does not exist")
     return AD_opt
 
 
-def run_AD_opt_model(AD_opt, args, t, sim_result, pat_waiting=False):
-    if args['policy'] == 'opt' or args['policy'] == 'opt_t_const':
+def run_AD_opt_model(AD_opt, args, t, sim_result):
+    if args['policy'] == 'opt':
         return AD_opt.run_opt(args, t, sim_result)
-    elif args['policy'] == 'opt-saa':
-        return AD_opt.run_saa(args, t, sim_result)
-    elif args['policy'] == 'alt1':
-        return AD_opt.run_alt1(args, t, pat_waiting)
-    elif args['policy'] == 'alt2':
-        return AD_opt.run_alt2(args, t, pat_waiting)
     else:
         raise Exception("policy name does not exist")
 
 
 if __name__ == "__main__":
     start_time = time()
-    args = init_params('alt2')  # 'opt-saa', 'saa', 'alt1', 'alt2', 'opt_t_const' 중 택1
+    args = init_params(policy='alt2')  # 'opt', 'opt_NoFuture', 'opt_NoOtherHospitals', 'opt_NoBoth' 중 택1
     AD_opt = load_AD_opt_model(args)
     AD_sim = DES(args)
 

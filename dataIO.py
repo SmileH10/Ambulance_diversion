@@ -1,5 +1,5 @@
 import numpy as np
-
+ 
 
 def load_data(filename, load_type='float', head=True, col_index=True, delimiter=","):
     f = open(filename)

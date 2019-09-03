@@ -31,16 +31,14 @@ class Patient(object):
 def init_params(policy):
     args = {}
     args['policy'] = policy.lower()
-    if not args['policy'] in ['opt-saa', 'opt', 'alt1', 'alt2', 'opt_t_const']:
-        raise Exception("wrong policy name")
+    assert args['policy'] in ['opt', 'opt_nofuture', 'opt_nootherhospitals', 'opt_noboth']
     args['scenarios'] = 30  # 시나리오 수
     args['L'] = 2
     args['H'] = 10
     args['T'] = 48  # 전체 시뮬레이션 길이
     args['time_planning'] = 8  # 최적화 할 때 얼마나 뒤 시점까지 계산할 것인가
     args['time_unit'] = 30  # (min). : 1 time unit = 60분으로 설정
-    if 1440 % args['time_unit'] != 0:
-        raise Exception("'time_unit'이 1440분(1일)의 인수여야 함")
+    assert 1440 % args['time_unit'] == 0  # 'time_unit'이 1440분(1일)의 인수여야 함
     args['thd'] = [2, 2]  # Threshold [중증도 0(응급), 1(비응급)]
     args['avg_svc_t'] = [40.0, 20.0]  # 중증도 별 치료시간 (단위: minutes / patient)
 
@@ -85,26 +83,8 @@ def init_params(policy):
 
 def init_policy_specific_params(args):
     # AD 결정 수리모델 목적함수의 계수
-    if args['policy'] == 'opt-saa':
-        args['step'] = 30
-    elif args['policy'] == 'alt1':
-        # AD 조건: 대기 중인 모든 환자들을 치료하는 데 소요되는 예상시간 > RULE_AD 시간
-        # OPEN 조건: 대기 중인 모든 환자들을 치료하는 데 소요되는 예상시간 < RULE_OPEN 시간
-        args['rule1_AD_urg'] = 4  # 응급(urgent), H-AD (응급치료예상시간 기준)
-        args['rule1_open_urg'] = 1  # 응급, H-OPEN (응급치료예상시간 기준)
-        args['rule1_AD_nonurg'] = 4  # 비응급, L-AD (전체치료예상시간 기준)
-        args['rule1_open_nonurg'] = 1  # 비응급, OPEN (전체치료예상시간 기준)
-    elif args['policy'] == 'alt2':
-        # AD 조건: 대기 중인 모든 환자들을 치료하는 데 소요되는 예상시간 > RULE_AD 시간
-        # OPEN 조건: AD 후 RULE_OPEN 시간 경과 후
-        args['rule2_AD_urg'] = 4  # 응급, H-AD (응급치료예상시간 기준)
-        args['rule2_open_urg'] = 4  # 응급, H-OPEN (최소 H-AD 지속시간 제약)
-        args['rule2_AD_nonurg'] = 4  # 비응급, L-AD (전체치료예상시간 기준)
-        args['rule2_open_nonurg'] = 4  # 비응급, OPEN (최소 L-AD 지속시간 제약)
-    elif args['policy'] == 'opt_t_const':
-        args['opt_open_urg'] = 4  # 응급, H-OPEN (최소 H-AD 지속시간 제약)
-        args['opt_open_nonurg'] = 4  # 비응급, OPEN (최소 L-AD 지속시간 제약)
-
+    if args['policy'] == 'opt_nootherhospitals' or args['policy'] == 'opt_noboth':
+        args['crowd_penalty'] = 30
     return args
 
 
@@ -130,11 +110,8 @@ def load_csv_dataset(args):
     return args
 
 
-def scenario_generator(args, seed=1, saa=False):
-    if saa:
-        num_scenarios = args['step']
-    else:
-        num_scenarios = args['scenarios']
+def scenario_generator(args, seed=1):
+    num_scenarios = args['scenarios']
     L = args['L']
     H = args['H']
     T = args['T']
@@ -188,28 +165,14 @@ def scenario_generator(args, seed=1, saa=False):
                     # DES에서 그때그때 생성해도 되는데, 다른 전략과 비교하기 좋게 하려고(CRN) 미리 생성.
                     for cnt in range(int(args['time_unit'] / args['avg_svc_t'][l] * C[i][t2day(t)] * 5)):
                         temp_svc_t[w][(l, i, t)].append(np.random.exponential(args['avg_svc_t'][l]))
-    if saa:
-        if not 's_pat_amb' in args:
-            args['s_pat_amb'] = temp_pat_amb
-            args['s_pat_walk'] = temp_pat_walk
-            args['s_svc_t'] = temp_svc_t
-        else:
-            args['s_pat_amb'] += temp_pat_amb
-            args['s_pat_walk'] += temp_pat_walk
-            args['s_svc_t'] += temp_svc_t
-    else:
-        args['pat_amb'] = temp_pat_amb
-        args['pat_walk'] = temp_pat_walk
-        args['svc_t'] = temp_svc_t
-        args['num_pat'] = [{} for w in range(num_scenarios)]  # 시나리오 별 전체 환자 수
-        for w in range(num_scenarios):
-            for l in range(L):
-                for i in range(H):
-                    for t in range(T):
-                        if args['num_pat'][w] == {}:
-                            args['num_pat'][w] = len(args['pat_amb'][w][(l, i, t)])
-                            args['num_pat'][w] = len(args['pat_walk'][w][(l, i, t)])
-                        else:
-                            args['num_pat'][w] += len(args['pat_amb'][w][(l, i, t)])
-                            args['num_pat'][w] += len(args['pat_walk'][w][(l, i, t)])
+    args['pat_amb'] = temp_pat_amb
+    args['pat_walk'] = temp_pat_walk
+    args['svc_t'] = temp_svc_t
+    args['num_pat'] = [0 for w in range(num_scenarios)]  # 시나리오 별 전체 환자 수
+    for w in range(num_scenarios):
+        for l in range(L):
+            for i in range(H):
+                for t in range(T):
+                    args['num_pat'][w] += len(args['pat_amb'][w][(l, i, t)])
+                    args['num_pat'][w] += len(args['pat_walk'][w][(l, i, t)])
     return args
