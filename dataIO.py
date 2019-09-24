@@ -237,15 +237,15 @@ def write_model_result(args, sim_tard, AD_sce_result, sim_sce_details, sim_pat_i
         for w in range(args['scenarios']):
             for criterion in args['tard_criteria_for_report']:
                 tard_info['%d, %.1f' % (w, criterion)] = (
-                    safe_div(sum(sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion
-                                 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0)
+                    safe_div(sum(sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0)
                              , sum(1 for key in sim_pat_info[w].keys()
                                    if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0)),
-                    safe_div(sum(sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion for key in sim_pat_info[w].keys()
+                    safe_div(sum(sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] for key in sim_pat_info[w].keys()
                                  if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0),
                              sum(1 for key in sim_pat_info[w].keys()
                                  if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0)),
-                    safe_div(sum(sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion for key in sim_pat_info[w].keys()
+                    safe_div(sum(sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] for key in sim_pat_info[w].keys()
                                  if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1),
                              sum(1 for key in sim_pat_info[w].keys()
                                  if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1)),
