@@ -1,6 +1,14 @@
 import numpy as np
 from copy import deepcopy
 
+
+def safe_div(x, y):
+    if y == 0:
+        return 0
+    else:
+        return x / y
+
+
 def load_data(filename, load_type='float', head=True, col_index=True, delimiter=","):
     f = open(filename)
     data = []
@@ -224,57 +232,65 @@ def write_model_result(args, sim_tard, AD_sce_result, sim_sce_details, sim_pat_i
         print("write_data_error: svr_util.csv")
 
     # # 결과 출력: 파일 7 <tardiness_세부정보.csv>
-    # try:
-    tard_info = {}
-    for w in range(args['scenarios']):
+    try:
+        tard_info = {}
+        for w in range(args['scenarios']):
+            for criterion in args['tard_criteria_for_report']:
+                tard_info['%d, %.1f' % (w, criterion)] = (
+                    safe_div(sum(sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion
+                                 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0)
+                             , sum(1 for key in sim_pat_info[w].keys()
+                                   if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0)),
+                    safe_div(sum(sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0),
+                             sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0)),
+                    safe_div(sum(sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1),
+                             sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1)),
+                    safe_div(sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0),
+                             sum(1 for key in sim_pat_info[w].keys())),
+                    safe_div(sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0)
+                             , sum(1 for key in sim_pat_info[w].keys() if key[1] == 0)),
+                    safe_div(sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1)
+                             , sum(1 for key in sim_pat_info[w].keys() if key[1] == 1)),
+                    safe_div(sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0)
+                             , sum(1 for key in sim_pat_info[w].keys())),
+                    safe_div(sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1)
+                             , sum(1 for key in sim_pat_info[w].keys())),
+                    sum(1 for key in sim_pat_info[w].keys()),
+                    sum(1 for key in sim_pat_info[w].keys() if key[1] == 0),
+                    sum(1 for key in sim_pat_info[w].keys() if key[1] == 1),
+                    sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0),
+                    sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0),
+                    sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1)
+                )
+
         for criterion in args['tard_criteria_for_report']:
-            tard_info['%d, %.1f' % (w, criterion)] = (
-                sum(sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion
-                    for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0)\
-                / sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0),
-                sum(sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion
-                    for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0) \
-                / sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0),
-                sum(sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion
-                    for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1) \
-                / sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1),
-                sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0) \
-                / sum(1 for key in sim_pat_info[w].keys()),
-                sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0) \
-                / sum(1 for key in sim_pat_info[w].keys() if key[1] == 0),
-                sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1) \
-                / sum(1 for key in sim_pat_info[w].keys() if key[1] == 1),
-                sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0) \
-                / sum(1 for key in sim_pat_info[w].keys()),
-                sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0  and key[1] == 1) \
-                / sum(1 for key in sim_pat_info[w].keys()),
-                sum(1 for key in sim_pat_info[w].keys()),
-                sum(1 for key in sim_pat_info[w].keys() if key[1] == 0),
-                sum(1 for key in sim_pat_info[w].keys() if key[1] == 1),
-                sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0),
-                sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0),
-                sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1)
-            )
+            avg_temp = []
+            for i in range(14):
+                avg_temp.append(sum(tard_info['%d, %.1f' % (w, criterion)][i] for w in range(args['scenarios'])) / args['scenarios'])
+            tard_info['avg, %.1f' % criterion] = tuple(avg_temp)
 
-    for criterion in args['tard_criteria_for_report']:
-        avg_temp = []
-        for i in range(14):
-            avg_temp.append(sum(tard_info['%d, %.1f' % (w, criterion)][i] for w in range(args['scenarios'])) / args['scenarios'])
-        tard_info['avg, %.1f' % criterion] = tuple(avg_temp)
-
-    for key in tard_info.keys():
-        if key[:3] == 'avg':
-            tard_info[key] = "%.2f, %.2f, %.2f, %.4f, %.4f, %.4f, %.4f, %.4f, %.1f, %.1f, %.1f, %.1f, %.1f, %.1f" % tard_info[key]
-        else:
-            tard_info[key] = "%.2f, %.2f, %.2f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %d" % tard_info[key]
-    write_data(args, data=tard_info, filename="tardiness_세부정보",
-               head="W, tard초과시간기준,"
-                    "tard기준넘긴환자의 tard평균(전체), (응급), (비응급)," 
-                    "tard기준넘긴비율(%)(전체/전체), (응급/응급), (비응급/비응급)," 
-                    "(응급/전체), (비응급/전체), 전체환자수, 응급환자수, 비응급환자수,"
-                    "tard기준넘긴환자수(전체), (응급), (비응급)")
-    # except:
-    #     print("write_data_error: tardiness_세부정보.csv")
+        for key in tard_info.keys():
+            if key[:3] == 'avg':
+                tard_info[key] = "%.2f, %.2f, %.2f, %.4f, %.4f, %.4f, %.4f, %.4f, %.1f, %.1f, %.1f, %.1f, %.1f, %.1f" % tard_info[key]
+            else:
+                tard_info[key] = "%.2f, %.2f, %.2f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %d" % tard_info[key]
+        write_data(args, data=tard_info, filename="tardiness_세부정보",
+                   head="W, tard초과시간기준,"
+                        "tard기준넘긴환자의 tard평균(전체), (응급), (비응급)," 
+                        "tard기준넘긴비율(%)(전체/전체), (응급/응급), (비응급/비응급)," 
+                        "(응급/전체), (비응급/전체), 전체환자수, 응급환자수, 비응급환자수,"
+                        "tard기준넘긴환자수(전체), (응급), (비응급)")
+    except:
+        print("write_data_error: tardiness_세부정보.csv")
 
 
 def write_data(args, data, filename, head=False, list_2D=False, AD_model=False):
