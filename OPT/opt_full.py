@@ -48,7 +48,12 @@ class Opt(object):
         z = m.addVars(Hs, Ts, vtype=GRB.BINARY, name='z')  # 응급환자가 대기열에 있으면 0, 없으면 1
         n = m.addVars(Ls, Hs, Ts, name='n')
 
-        Ts2 = tuplelist(range(-np.max(self.dist), cur_t + self.tp))
+        if args['policy'] == 'opt_no_future':
+            Ts2 = tuplelist(range(-np.max(self.dist), cur_t))
+            TsObj = tuplelist(range(cur_t + 48))
+        else:
+            Ts2 = tuplelist(range(-np.max(self.dist), cur_t + self.tp))
+            TsObj = Ts
         f = m.addVars(Ls, Hs, Hs, Ts2, vtype=GRB.BINARY, name='f')
         lamda = m.addVars(Ls, Hs, Ts, name='lambda')
         mu = m.addVars(Ls, Hs, Ts, name='mu')

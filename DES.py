@@ -68,9 +68,9 @@ class DES(object):
                 if self.sim_t >= (self.cur_t + 1) * self.time_unit:  # 시뮬레이션 종료조건
                     break
                 if self.event_index < self.L:
-                    self.new_pat_arr_event(i)
+                    self.new_pat_arr_event(args, i)
                 else:
-                    self.svc_comp_event(i)
+                    self.svc_comp_event(args, i)
         self.calc_tardiness_t(args)
         self.t_increment()
         return self.sim_result
@@ -132,6 +132,7 @@ class DES(object):
                         self.sim_result['n'][l][j][self.cur_t + self.dist[i][j]] += len(self.pat_amb[(l, i, self.cur_t)])
                         self.sim_result['lambda'][l][j][self.cur_t + self.dist[i][j]] += len(self.pat_amb[(l, i, self.cur_t)])
                         break
+
         # # 도보로 온 환자
         for l in range(self.L):
             for i in range(self.H):
@@ -153,14 +154,22 @@ class DES(object):
         self.event_index = np.argmin(str2inf(event_time_candidate))
         self.sim_t = np.min(str2inf(event_time_candidate))
 
-    def new_pat_arr_event(self, i):
+    def new_pat_arr_event(self, args, i):
         event_l = self.event_index
         if any(self.svr_comp_t[i][c] == "idle" for c in range(max(self.C[i]))):  # idle server가 있는 경우
             # idle_svr index 저장
             idle_svr = self.svr_comp_t[i].index("idle")
             # 치료 종료시간 입력
             if not self.svc_t[(event_l, i, self.cur_t)]:
-                self.svc_t[(event_l, i, self.cur_t)].append(np.random.exponential(self.avg_svc_t[event_l]))
+                if args['prob_dist'] == 'exp':
+                    self.svc_t[(event_l, i, self.cur_t)].append(np.random.exponential(self.avg_svc_t[event_l]))
+                elif args['prob_dist'] == 'tri':
+                    self.svc_t[(event_l, i, self.cur_t)].append(np.random.triangular(self.avg_svc_t[event_l] - args['tri_range'][event_l],
+                                                                                     self.avg_svc_t[event_l],
+                                                                                     self.avg_svc_t[event_l] + args['tri_range'][event_l]))
+                elif args['prob_dist'] == 'norm':
+                    self.svc_t[(event_l, i, self.cur_t)].append(np.random.normal(self.avg_svc_t[event_l], args['norm_std'][event_l]))
+
             self.svr_comp_t[i][idle_svr] = self.sim_t + self.svc_t[(event_l, i, self.cur_t)][0]
             del self.svc_t[(event_l, i, self.cur_t)][0]
             # 환자를 pat_in_svc 로 이동
@@ -170,7 +179,7 @@ class DES(object):
             self.pat_waiting[event_l][i].append(self.pat_scheduled[event_l][i][0])
         del self.pat_scheduled[event_l][i][0]  # 도착예정환자 리스트에서 환자 삭제
 
-    def svc_comp_event(self, i):
+    def svc_comp_event(self, args, i):
         # 서비스 종료 svr의 index를 idle_svr에 저장
         idle_svr = self.event_index - self.L
         # 환자의 종료시간, 병원내 환자수(n)/빠져나간환자수(mu) 기록
@@ -195,7 +204,15 @@ class DES(object):
                 if self.pat_waiting[l][i] != []:  # 대기 중인 환자가 있다면
                     # 치료 종료시간 입력
                     if not self.svc_t[(l, i, self.cur_t)]:
-                        self.svc_t[(l, i, self.cur_t)].append(np.random.exponential(self.avg_svc_t[l]))
+                        if args['prob_dist'] == 'exp':
+                            self.svc_t[(l, i, self.cur_t)].append(np.random.exponential(self.avg_svc_t[l]))
+                        elif args['prob_dist'] == 'tri':
+                            self.svc_t[(l, i, self.cur_t)].append(np.random.triangular(self.avg_svc_t[l] - args['tri_range'][l],
+                                                                                       self.avg_svc_t[l],
+                                                                                       self.avg_svc_t[l] + args['tri_range'][l]))
+                        elif args['prob_dist'] == 'norm':
+                            self.svc_t[(l, i, self.cur_t)].append(np.random.normal(self.avg_svc_t[l], args['norm_std'][l]))
+
                     self.svr_comp_t[i][idle_svr] = self.sim_t + self.svc_t[(l, i, self.cur_t)][0]
                     del self.svc_t[(l, i, self.cur_t)][0]
                     # 환자를 pat_in_svc로 이동
@@ -214,23 +231,25 @@ class DES(object):
         for i in range(self.H):
             for pat in self.pat_comp[i]:
                 pat.calc_tard_t(self.cur_t, pat.comp_t)
-                if pat.pat_tard > 0:
-                    self.sim_tard_over_thd[pat.l] += pat.pat_tard
-                    self.num_pat_over_thd[pat.l] += 1
-                self.sim_tard[pat.l][i][self.cur_t] += pat.pat_tard_t
-                self.pat_info['%d, %d, %d, %d, %d' % (pat.id, pat.l, pat.i, pat.j, self.cur_t)] \
-                    = "%.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f" % \
-                      (pat.occ_t, pat.arr_t, pat.svc_start_t, pat.comp_t,
-                       pat.arr_t - pat.occ_t, pat.svc_start_t - pat.arr_t, pat.comp_t - pat.svc_start_t, pat.comp_t - pat.occ_t)
+                if self.cur_t >= args['warmup_period']:
+                    if pat.pat_tard > 0:
+                        self.sim_tard_over_thd[pat.l] += pat.pat_tard
+                        self.num_pat_over_thd[pat.l] += 1
+                    self.sim_tard[pat.l][i][self.cur_t] += pat.pat_tard_t
+                    self.pat_info[(pat.id, pat.l, pat.i, pat.j, self.cur_t)] \
+                        = (pat.occ_t, pat.arr_t, pat.svc_start_t, pat.comp_t,
+                           pat.arr_t - pat.occ_t, pat.svc_start_t - pat.arr_t, pat.comp_t - pat.svc_start_t, pat.comp_t - pat.occ_t)
                 self.pat_comp[i] = []
             for pat in self.pat_in_svc[i]:
                 if pat != "None":
                     pat.calc_tard_t(self.cur_t, self.sim_t)
-                    self.sim_tard[pat.l][i][self.cur_t] += pat.pat_tard_t
+                    if self.cur_t >= args['warmup_period']:
+                        self.sim_tard[pat.l][i][self.cur_t] += pat.pat_tard_t
             for l in range(self.L):
                 for pat in self.pat_waiting[l][i]:
                     pat.calc_tard_t(self.cur_t, self.sim_t)
-                    self.sim_tard[pat.l][i][self.cur_t] += pat.pat_tard_t
+                    if self.cur_t >= args['warmup_period']:
+                        self.sim_tard[pat.l][i][self.cur_t] += pat.pat_tard_t
             # utilization 기록
             for c in range(max(self.C[i])):
                 if self.svr_comp_t[i][c] != "closed" and self.svr_comp_t[i][c] != "idle":
