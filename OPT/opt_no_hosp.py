@@ -1,6 +1,4 @@
 from gurobipy import *
-import numpy as np
-from dataIO import write_data
 
 
 class OptNoHosp(object):
@@ -67,34 +65,36 @@ class OptNoHosp(object):
 
         # Set objective
         # 실제 병원으로 들어오는 환자 수 lambda 결정
-        if args['policy'] == 'opt_no_both':
-            m.setObjective((quicksum(self.alpha * quicksum(obj1[l, t] for l in Ls for t in TsObj if t >= self.thd[l] and t >= cur_t)
-                            - self.coef_mu * quicksum(mu[l, t] for l in Ls for t in TsObj if t >= cur_t)
-                            + (self.beta * self.avg_travel_t + self.gamma * self.delta)
-                            * quicksum((1 - f[l, t]) * self.d_amb[l][i][self.t2day(t)] for l in Ls for t in Ts if t >= cur_t)
-                             for i in Hs)), GRB.MINIMIZE)
-        else:
-            m.setObjective((quicksum(
-                self.alpha * quicksum(obj1[l, i, t] for l in Ls for t in Ts if t >= self.thd[l] and t >= cur_t)
-                - self.coef_mu * quicksum(mu[l, i, t] for l in Ls for t in Ts if t >= cur_t)
-                + (self.beta * self.avg_travel_t + self.gamma * self.delta)
-                * quicksum((1 - f[l, i, t]) * self.d_amb[l][i][self.t2day(t)] for l in Ls for t in Ts if t >= cur_t)
-                for i in Hs)), GRB.MINIMIZE)
+        # if args['policy'] == 'opt_no_both':
+        #     m.setObjective((quicksum(quicksum(self.alpha[l] *
+        #                                       quicksum(obj1[l, t] for t in TsObj if t >= self.thd[l] and t >= cur_t) for l in Ls)
+        #                              - quicksum(self.coef_mu[l] * quicksum(mu[l, t] for t in TsObj if t >= cur_t) for l in Ls)
+        #                              + quicksum((self.beta[l] * self.avg_travel_t + self.gamma[l] * self.delta)
+        #                                         * quicksum((1 - f[l, t]) * self.d_amb[l][i][self.t2day(t)] for t in Ts if t >= cur_t)
+        #                                         for l in Ls)
+        #                              for i in Hs)), GRB.MINIMIZE)
+        # else:
+        m.setObjective((quicksum(
+            quicksum(self.alpha[l] * quicksum(obj1[l, i, t] for t in Ts if t >= self.thd[l] and t >= cur_t) for l in Ls)
+            - quicksum(self.coef_mu[l] * quicksum(mu[l, i, t] for t in Ts if t >= cur_t) for l in Ls)
+            + quicksum((self.beta[l] * self.avg_travel_t + self.gamma[l] * self.delta)
+                       * quicksum((1 - f[l, i, t]) * self.d_amb[l][i][self.t2day(t)] for t in Ts if t >= cur_t) for l in Ls)
+            for i in Hs)), GRB.MINIMIZE)
         # Add constraint
-        if args['policy'] == 'opt_no_both':
-            m.addConstrs((obj1[l, i, t] >=
-                          quicksum(f[l, i, t2] * sim_result['pat_amb_hist'][l][i][t2] + sim_result['pat_walk_hist'][l][i][t2]
-                                   for t2 in Ts if t2 < t - self.thd[l] and t2 < cur_t)
-                          - quicksum(mu[l, i, t2] for t2 in TsObj if t2 <= t)
-                          for l in Ls for i in Hs for t in TsObj if t >= self.thd[l] and t >= cur_t), name='obj1')
-        else:
-            m.addConstrs((obj1[l, i, t] >=
-                          quicksum(f[l, i, t2] * self.d_amb[l][i][self.t2day(t2)] + self.d_walk[l][i][self.t2day(t2)]
-                                   for t2 in Ts if cur_t <= t2 < t - self.thd[l])
-                          + quicksum(f[l, i, t2] * sim_result['pat_amb_hist'][l][i][t2] + sim_result['pat_walk_hist'][l][i][t2]
-                                     for t2 in Ts if t2 < t - self.thd[l] and t2 < cur_t)
-                          - quicksum(mu[l, i, t2] for t2 in Ts if t2 <= t)
-                          for l in Ls for i in Hs for t in Ts if t >= self.thd[l] and t >= cur_t), name='obj1')
+        # if args['policy'] == 'opt_no_both':
+        #     m.addConstrs((obj1[l, i, t] >=
+        #                   quicksum(f[l, i, t2] * sim_result['pat_amb_hist'][l][i][t2] + sim_result['pat_walk_hist'][l][i][t2]
+        #                            for t2 in Ts if t2 < t - self.thd[l] and t2 < cur_t)
+        #                   - quicksum(mu[l, i, t2] for t2 in TsObj if t2 <= t)
+        #                   for l in Ls for i in Hs for t in TsObj if t >= self.thd[l] and t >= cur_t), name='obj1')
+        # else:
+        m.addConstrs((obj1[l, i, t] >=
+                      quicksum(f[l, i, t2] * self.d_amb[l][i][self.t2day(t2)] + self.d_walk[l][i][self.t2day(t2)]
+                               for t2 in Ts if cur_t <= t2 < t - self.thd[l])
+                      + quicksum(f[l, i, t2] * sim_result['pat_amb_hist'][l][i][t2] + sim_result['pat_walk_hist'][l][i][t2]
+                                 for t2 in Ts if t2 < t - self.thd[l] and t2 < cur_t)
+                      - quicksum(mu[l, i, t2] for t2 in Ts if t2 <= t)
+                      for l in Ls for i in Hs for t in Ts if t >= self.thd[l] and t >= cur_t), name='obj1')
 
         # 과거 상황(t < current_t) 입력: lambda, mu, AD
         m.addConstrs((lamda[l, i, t] == sim_result['lambda'][l][i][t] for l in Ls for i in Hs for t in Ts if t < cur_t))
@@ -124,12 +124,12 @@ class OptNoHosp(object):
                       for i in Hs for t in Ts if t >= cur_t), name='Constr14')
 
         # 실제 병원으로 들어오는 환자 수 lambda 결정
-        if args['policy'] == 'opt_no_both':
-            m.addConstrs((0 == lamda[l, i, t]
-                          for l in Ls for i in Hs for t in TsObj if t >= cur_t), name='Constr17')
-        else:
-            m.addConstrs((f[l, i, t] * self.d_amb[l][i][self.t2day(t)] + self.d_walk[l][i][self.t2day(t)] == lamda[l, i, t]
-                          for l in Ls for i in Hs for t in Ts if t >= cur_t), name='Constr17')
+        # if args['policy'] == 'opt_no_both':
+        #     m.addConstrs((0 == lamda[l, i, t]
+        #                   for l in Ls for i in Hs for t in TsObj if t >= cur_t), name='Constr17')
+        # else:
+        m.addConstrs((f[l, i, t] * self.d_amb[l][i][self.t2day(t)] + self.d_walk[l][i][self.t2day(t)] == lamda[l, i, t]
+                      for l in Ls for i in Hs for t in Ts if t >= cur_t), name='Constr17')
 
         # # 동시에 모두 AD 상태 금지: 비응급환자는 받는데 응급환자는 AD하기 때문 (AAA, AAL, ALL, ALL 금지 > AAO, ALO, LLO)
         # # = 적어도 하나는 OPEN = 적어도 하나의 y는 1 (y가 1이면, x도 1이 되어 open이 됨)

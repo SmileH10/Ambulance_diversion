@@ -64,10 +64,11 @@ class Opt(object):
 
         # Set objective
         # 실제 병원으로 들어오는 환자 수 lambda 결정
-        m.setObjective((self.alpha * quicksum(obj1[l, i, t] for l in Ls for i in Hs for t in Ts if t >= self.thd[l] and t >= cur_t)
+        m.setObjective((quicksum(self.alpha[l] * quicksum(obj1[l, i, t] for i in Hs for t in Ts if t >= self.thd[l] and t >= cur_t)
+                                 for l in Ls)
                         - self.coef_mu * quicksum(mu[l, i, t] for l in Ls for i in Hs for t in Ts if t >= cur_t)
-                        + self.beta * quicksum(self.traveling_t[i][j] * f[l, i, j, t] * self.d_amb[l][i][self.t2day(t)]
-                                               for l in Ls for i in Hs for j in Hs for t in Ts if t >= cur_t)
+                        + quicksum(self.beta[l] * quicksum(self.traveling_t[i][j] * f[l, i, j, t] * self.d_amb[l][i][self.t2day(t)]
+                                                           for i in Hs for j in Hs for t in Ts if t >= cur_t) for l in Ls)
                         ), GRB.MINIMIZE)
 
         # Add constraint
