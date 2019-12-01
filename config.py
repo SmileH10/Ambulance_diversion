@@ -31,23 +31,29 @@ class Patient(object):
 def init_params(policy):
     args = {}
     args['policy'] = policy.lower()
-    if not args['policy'] in ['opt-saa', 'opt', 'alt1', 'alt2', 'opt_t_const']:
-        raise Exception("wrong policy name")
+    assert args['policy'] in ['opt', 'opt_no_hosp', 'no_future', 'open']
     args['scenarios'] = 30  # 시나리오 수
     args['L'] = 2
     args['H'] = 10
-    args['T'] = 48  # 전체 시뮬레이션 길이
-    args['time_planning'] = 8  # 최적화 할 때 얼마나 뒤 시점까지 계산할 것인가
+    args['T'] = 60  # 전체 시뮬레이션 길이
+    args['time_planning'] = 18  # 최적화 할 때 얼마나 뒤 시점까지 계산할 것인가
     args['time_unit'] = 30  # (min). : 1 time unit = 60분으로 설정
-    if 1440 % args['time_unit'] != 0:
-        raise Exception("'time_unit'이 1440분(1일)의 인수여야 함")
-    args['thd'] = [2, 2]  # Threshold [중증도 0(응급), 1(비응급)]
-    args['avg_svc_t'] = [40.0, 20.0]  # 중증도 별 치료시간 (단위: minutes / patient)
+    args['warmup_period'] = 12  # (unit_time)
+    args['tard_criteria_for_report'] = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310, 320, 330, 340, 350, 360]  # 갯수 제한없이 입력가능. thd를 x 분 이상 초과한 환자의 tard 평균 / 환자비율 출력
+    assert 1440 % args['time_unit'] == 0  # 'time_unit'이 1440분(1일)의 인수여야 함
+    args['thd'] = [4, 4]  # Threshold [중증도 0(응급), 1(비응급)]
+    args['avg_svc_t'] = [100.0, 30.0]  # 중증도 별 치료시간 (단위: minutes / patient)
+    args['prob_dist'] = 'tri'  # 'exp', 'tri', 'norm' 중 하나
+    assert args['prob_dist'] in ['exp', 'tri', 'norm']
+    if args['prob_dist'] == 'tri':
+        args['tri_range'] = [10, 10]  # [응급, 비응급]. left = mode - tri_range; right = mode + tri_range
+    elif args['prob_dist'] == 'norm':
+        args['norm_std'] = [10, 10]  # [응급, 비응급]. stdev
 
     # 환자 비율 지정
-    args['amb/total'] = 0.4  # 전체 환자 중 구급차로 오는 환자 비율
-    args['severity_ratio(amb)'] = [0.3, 0.7]  # 구급차로 오는 환자 중 응급환자 비율
-    args['severity_ratio(walk)'] = [0.1, 0.9]  # 도보로 오는 환자 중 응급환자 비율
+    args['amb/total'] = 0.22  # 전체 환자 중 구급차로 오는 환자 비율
+    args['severity_ratio(amb)'] = [0.91, 0.09]  # 구급차로 오는 환자 중 응급환자 비율
+    args['severity_ratio(walk)'] = [0.78, 0.22]  # 도보로 오는 환자 중 응급환자 비율
     # severity_ratio, amb_ratio는 자동 계산되는 값
     # 예1) args['severity_ratio'] = [0.3, 0.7]  # severity_ratio[중증도]: 전체 환자 중증도 비율 (합이 1이어야 함)
     # 예2) args['amb_ratio'] = [1, 1]  # amb_ratio[중증도]; l 중증도의 환자 중 구급차로 오는 환자의 비율 (1:3, 1:7)
@@ -66,18 +72,16 @@ def init_params(policy):
     args['log_dir'] = "./logs/{}-{}/".format(args['policy'], datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
     args['ADmodel_dir'] = args['log_dir'] + "ADmodel/"
     os.makedirs(args['log_dir'])
-    if args['policy'] == 'opt' or args['policy'] == 'opt_t_const':
+    if args['policy'] == 'opt' or args['policy'] == 'opt_no_hosp':
         os.makedirs(args['ADmodel_dir'])
 
     # 목적함수
-    args['alpha'] = 1  # tardiness
-    args['beta'] = 0.01  # - mu
-    args['gamma'] = 0  # x (응급 AD)
-    args['delta'] = 0  # y (비응급 AD)
-    args['coef_traveling_t'] = 0.01  # traveling_time
+    args['alpha'] = [2, 1]  # tardiness
+    args['coef_mu'] = [0.0001, 0.0001]  # - mu
+    args['beta'] = [0.02, 0.01]  # traveling_time
 
-    args = init_policy_specific_params(args)
     args = load_csv_dataset(args)
+    args = init_policy_specific_params(args)
     args = scenario_generator(args)
 
     return args
@@ -85,32 +89,28 @@ def init_params(policy):
 
 def init_policy_specific_params(args):
     # AD 결정 수리모델 목적함수의 계수
-    if args['policy'] == 'opt-saa':
-        args['step'] = 30
-    elif args['policy'] == 'alt1':
-        # AD 조건: 대기 중인 모든 환자들을 치료하는 데 소요되는 예상시간 > RULE_AD 시간
-        # OPEN 조건: 대기 중인 모든 환자들을 치료하는 데 소요되는 예상시간 < RULE_OPEN 시간
-        args['rule1_AD_urg'] = 4  # 응급(urgent), H-AD (응급치료예상시간 기준)
-        args['rule1_open_urg'] = 1  # 응급, H-OPEN (응급치료예상시간 기준)
-        args['rule1_AD_nonurg'] = 4  # 비응급, L-AD (전체치료예상시간 기준)
-        args['rule1_open_nonurg'] = 1  # 비응급, OPEN (전체치료예상시간 기준)
-    elif args['policy'] == 'alt2':
-        # AD 조건: 대기 중인 모든 환자들을 치료하는 데 소요되는 예상시간 > RULE_AD 시간
-        # OPEN 조건: AD 후 RULE_OPEN 시간 경과 후
-        args['rule2_AD_urg'] = 4  # 응급, H-AD (응급치료예상시간 기준)
-        args['rule2_open_urg'] = 4  # 응급, H-OPEN (최소 H-AD 지속시간 제약)
-        args['rule2_AD_nonurg'] = 4  # 비응급, L-AD (전체치료예상시간 기준)
-        args['rule2_open_nonurg'] = 4  # 비응급, OPEN (최소 L-AD 지속시간 제약)
-    elif args['policy'] == 'opt_t_const':
-        args['opt_open_urg'] = 4  # 응급, H-OPEN (최소 H-AD 지속시간 제약)
-        args['opt_open_nonurg'] = 4  # 비응급, OPEN (최소 L-AD 지속시간 제약)
-
+    if args['policy'] == 'opt_no_hosp':
+        args['gamma'] = [2, 1]  # AD
+        args['avg_travel_t'] = avg_travel_t(args['traveling_t'])
+    if args['policy'] == 'opt_no_hosp' or args['policy'] == 'no_future':
+        args['delta'] = [3, 4]  # expected tardiness of an AD-patient (unit time)
     return args
+
+
+def avg_travel_t(travel_matrix):
+    avg_val = 0.0
+    for i in range(len(travel_matrix)):
+        for j in range(len(travel_matrix)):
+            avg_val += travel_matrix[i][j]
+    avg_val /= len(travel_matrix) * (len(travel_matrix) - 1)
+    return avg_val
 
 
 def load_csv_dataset(args):
     # 병원 간 거리 불러오기
-    args['traveling_t'] = load_data("./dataset/traveling_time.csv", load_type='int')
+    args['traveling_t'] = load_data("./dataset/traveling_time.csv", load_type='int')[:args['H']]
+    for i in range(len(args['traveling_t'])):
+        args['traveling_t'][i] = args['traveling_t'][i][:args['H']]
     args['unit_distance'] = deepcopy(args['traveling_t'])
     for i in range(len(args['traveling_t'])):
         for j in range(len(args['traveling_t'][i])):
@@ -120,7 +120,7 @@ def load_csv_dataset(args):
     args['server'] = load_data("./dataset/server.csv", load_type='int')  # C[i][t]
     args['d_amb'] = [[[0.0 for t in range(1440//args['time_unit'])] for i in range(args['H'])] for l in range(args['L'])]
     args['d_walk'] = [[[0.0 for t in range(1440//args['time_unit'])] for i in range(args['H'])] for l in range(args['L'])]
-    for i in range(len(args['demand'])):
+    for i in range(args['H']):
         for t in range(1440 // args['time_unit']):
             for l in range(args['L']):
                 # args['d_amb'][l][i][t] = args['demand'][i][t] * args['severity_ratio'][l] * args['amb_ratio'][l]
@@ -130,11 +130,8 @@ def load_csv_dataset(args):
     return args
 
 
-def scenario_generator(args, seed=1, saa=False):
-    if saa:
-        num_scenarios = args['step']
-    else:
-        num_scenarios = args['scenarios']
+def scenario_generator(args, seed=1):
+    num_scenarios = args['scenarios']
     L = args['L']
     H = args['H']
     T = args['T']
@@ -164,7 +161,16 @@ def scenario_generator(args, seed=1, saa=False):
                         if current_t > time_unit * (t + 1):
                             break
                         elif check_recorded == 1:
-                            current_t += np.random.exponential(args['time_unit'] / (D[i][t2day(t)] * args['severity_ratio'][l]))
+                            if args['prob_dist'] == 'exp':
+                                current_t += np.random.exponential(args['time_unit'] /
+                                                                   (D[i][t2day(t)]
+                                                                    * args['severity_ratio'][l]))
+                            elif args['prob_dist'] == 'tri':
+                                mode = args['time_unit'] / (D[i][t2day(t)] * args['severity_ratio'][l])
+                                current_t += np.random.triangular(mode - args['tri_range'][l], mode, mode + args['tri_range'][l])
+                            elif args['prob_dist'] == 'norm':
+                                current_t += np.random.normal(args['time_unit'] / (D[i][t2day(t)] * args['severity_ratio'][l]),
+                                                              args['norm_std'][l])
                         else:
                             check_recorded = 1
 
@@ -187,29 +193,23 @@ def scenario_generator(args, seed=1, saa=False):
                     temp_svc_t[w][(l, i, t)] = []
                     # DES에서 그때그때 생성해도 되는데, 다른 전략과 비교하기 좋게 하려고(CRN) 미리 생성.
                     for cnt in range(int(args['time_unit'] / args['avg_svc_t'][l] * C[i][t2day(t)] * 5)):
-                        temp_svc_t[w][(l, i, t)].append(np.random.exponential(args['avg_svc_t'][l]))
-    if saa:
-        if not 's_pat_amb' in args:
-            args['s_pat_amb'] = temp_pat_amb
-            args['s_pat_walk'] = temp_pat_walk
-            args['s_svc_t'] = temp_svc_t
-        else:
-            args['s_pat_amb'] += temp_pat_amb
-            args['s_pat_walk'] += temp_pat_walk
-            args['s_svc_t'] += temp_svc_t
-    else:
-        args['pat_amb'] = temp_pat_amb
-        args['pat_walk'] = temp_pat_walk
-        args['svc_t'] = temp_svc_t
-        args['num_pat'] = [{} for w in range(num_scenarios)]  # 시나리오 별 전체 환자 수
-        for w in range(num_scenarios):
-            for l in range(L):
-                for i in range(H):
-                    for t in range(T):
-                        if args['num_pat'][w] == {}:
-                            args['num_pat'][w] = len(args['pat_amb'][w][(l, i, t)])
-                            args['num_pat'][w] = len(args['pat_walk'][w][(l, i, t)])
-                        else:
-                            args['num_pat'][w] += len(args['pat_amb'][w][(l, i, t)])
-                            args['num_pat'][w] += len(args['pat_walk'][w][(l, i, t)])
+                        if args['prob_dist'] == 'exp':
+                            temp_svc_t[w][(l, i, t)].append(np.random.exponential(args['avg_svc_t'][l]))
+                        elif args['prob_dist'] == 'tri':
+                            temp_svc_t[w][(l, i, t)].append(np.random.triangular(args['avg_svc_t'][l] - args['tri_range'][l],
+                                                                                 args['avg_svc_t'][l],
+                                                                                 args['avg_svc_t'][l] + args['tri_range'][l]))
+                        elif args['prob_dist'] == 'norm':
+                            temp_svc_t[w][(l, i, t)].append(np.random.normal(args['avg_svc_t'][l], args['norm_std'][l]))
+
+    args['pat_amb'] = temp_pat_amb
+    args['pat_walk'] = temp_pat_walk
+    args['svc_t'] = temp_svc_t
+    args['num_pat'] = [0 for w in range(num_scenarios)]  # 시나리오 별 전체 환자 수
+    for w in range(num_scenarios):
+        for l in range(L):
+            for i in range(H):
+                for t in range(T):
+                    args['num_pat'][w] += len(args['pat_amb'][w][(l, i, t)])
+                    args['num_pat'][w] += len(args['pat_walk'][w][(l, i, t)])
     return args

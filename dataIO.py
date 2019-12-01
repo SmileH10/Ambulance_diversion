@@ -1,4 +1,12 @@
 import numpy as np
+from copy import deepcopy
+
+
+def safe_div(x, y):
+    if y == 0:
+        return 0
+    else:
+        return x / y
 
 
 def load_data(filename, load_type='float', head=True, col_index=True, delimiter=","):
@@ -28,7 +36,7 @@ def write_model_result(args, sim_tard, AD_sce_result, sim_sce_details, sim_pat_i
     res = [[0.0 for _ in range(23)] for w in range(args['scenarios'] + 1)]
     for w in range(args['scenarios']):
         for l in range(args['L']):
-            num_pat_comp[w][l] = sum(sim_sce_details[w]['mu'][l][i][t] for i in range(args['H']) for t in range(args['T']))
+            num_pat_comp[w][l] = sum(sim_sce_details[w]['mu'][l][i][t] for i in range(args['H']) for t in range(args['T']) if t >= args['warmup_period'])
             sum_tard_wl[w][l] = sim_tard_over_thd[w][l]
 
         # avg tard (전체/응급/비응급)  "avg_tard(전체), avg_tard(응급), avg_tard(비응급)"
@@ -41,9 +49,9 @@ def write_model_result(args, sim_tard, AD_sce_result, sim_sce_details, sim_pat_i
         res[w][4] = sum(sim_traveling_t[w][0][i][t] for i in range(args['H']) for t in range(args['T'])) / num_pat_comp[w][0]
         res[w][5] = sum(sim_traveling_t[w][1][i][t] for i in range(args['H']) for t in range(args['T'])) / num_pat_comp[w][1]
         # weighted_sum (전체/응급/비응급)
-        res[w][6] = args['alpha'] * res[w][0] + args['coef_traveling_t'] * res[w][3]
-        res[w][7] = args['alpha'] * res[w][1] + args['coef_traveling_t'] * res[w][4]
-        res[w][8] = args['alpha'] * res[w][2] + args['coef_traveling_t'] * res[w][5]
+        res[w][7] = args['alpha'][0] * res[w][1] + args['beta'][0] * res[w][4]
+        res[w][8] = args['alpha'][1] * res[w][2] + args['beta'][1] * res[w][5]
+        res[w][6] = (res[w][7] * num_pat_comp[w][0] + res[w][8] * num_pat_comp[w][0]) / sum(num_pat_comp[w][l] for l in range(args['L']))
         # thd넘긴환자의 tard평균 (전체/응급/비응급)
         if sim_num_pat_over_thd[w][0] + sim_num_pat_over_thd[w][1] == 0:
             res[w][9] = 0
@@ -64,9 +72,11 @@ def write_model_result(args, sim_tard, AD_sce_result, sim_sce_details, sim_pat_i
         # thd넘긴환자비율 (분자: 응급/비응급, 분모; 전체)
         res[w][15] = sim_num_pat_over_thd[w][0] / (num_pat_comp[w][0] + num_pat_comp[w][1])
         res[w][16] = sim_num_pat_over_thd[w][1] / (num_pat_comp[w][0] + num_pat_comp[w][1])
+        # 전체/응급/비응급 환자수
         res[w][17] = num_pat_comp[w][0] + num_pat_comp[w][1]
         res[w][18] = num_pat_comp[w][0]
         res[w][19] = num_pat_comp[w][1]
+        # 전체/응급/비응급 thd넘긴 환자수
         res[w][20] = sim_num_pat_over_thd[w][0] + sim_num_pat_over_thd[w][1]
         res[w][21] = sim_num_pat_over_thd[w][0]
         res[w][22] = sim_num_pat_over_thd[w][1]
@@ -132,7 +142,7 @@ def write_model_result(args, sim_tard, AD_sce_result, sim_sce_details, sim_pat_i
             AD_print.append(line)
         AD_print.append("\n")
     try:
-        write_data(args, data=AD_print, filename='AD_result', list_2D=True)
+        write_data(args, data=AD_print, filename='AD 결과', list_2D=True)
     except:
         print("write_data_error: AD_result.csv")
     try:
@@ -142,12 +152,12 @@ def write_model_result(args, sim_tard, AD_sce_result, sim_sce_details, sim_pat_i
                                                 AD_change["%d, %d" % (w, i)][0], AD_change["%d, %d" % (w, i)][1],
                                                 AD_change["%d, %d" % (w, i)][2], AD_change["%d, %d" % (w, i)][3],
                                                 AD_change["%d, %d" % (w, i)][4], AD_change["%d, %d" % (w, i)][5])
-        write_data(args, data=AD_change, filename="AD_num_change",
+        write_data(args, data=AD_change, filename="AD 변경횟수",
                    head="W, I, AD_변경(0+1+2+3), (0)A-AD>OPEN, (1)OPEN>A-AD, (2)L-AD>OPEN, (3)OPEN>L-AD, (4)A-AD>L-AD, (5)L-AD>A-AD")
     except:
         print("write_data_error: num_AD_change.csv")
     try:
-        write_data(args, data=AD_duration, filename='AD_duration', head="W, I, AD종류, 지속시간(min)")
+        write_data(args, data=AD_duration, filename='AD 지속시간', head="W, I, AD종류, 지속시간(min)")
     except:
         print("write_data_error: AD_duration.csv")
 
@@ -193,10 +203,15 @@ def write_model_result(args, sim_tard, AD_sce_result, sim_sce_details, sim_pat_i
     # # 결과 출력: 파일 5 <patient_info.csv>
     try:
         sum_pat_info = {}
+        cp_sim_pat_info = deepcopy(sim_pat_info)
         for w in range(args['scenarios']):
             for key in sim_pat_info[w].keys():
-                sum_pat_info["%d, %s" % (w, key)] = sim_pat_info[w][key]
-            write_data(args, data=sim_pat_info[w], filename="patient_info_w%d" % w,
+                cp_sim_pat_info[w]['%d, %d, %d, %d, %d' % key] = "%.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f" % cp_sim_pat_info[w][key]
+                del cp_sim_pat_info[w][key]
+        for w in range(args['scenarios']):
+            for key in cp_sim_pat_info[w].keys():
+                sum_pat_info["%d, %s" % (w, key)] = cp_sim_pat_info[w][key]
+            write_data(args, data=cp_sim_pat_info[w], filename="patient_info_w%d" % w,
                        head="ID, L, I, J, T, occ_t(1), arr_t(2), svc_start_t(3), comp_t(4), 이송(2-1), 대기(3-2), 치료(4-3), stay(4-1)")
         write_data(args, data=sum_pat_info, filename="patient_info_SUM",
                    head="W, ID, L, I, J, T, occ_t(1), arr_t(2), svc_start_t(3), comp_t(4), 이송(2-1), 대기(3-2), 치료(4-3), stay(4-1)")
@@ -215,6 +230,67 @@ def write_model_result(args, sim_tard, AD_sce_result, sim_sce_details, sim_pat_i
         write_data(args, data=sum_svr_util, filename="svr_util", head="W, I, T, svr, utilization")
     except:
         print("write_data_error: svr_util.csv")
+
+    # # 결과 출력: 파일 7 <tardiness_세부정보.csv>
+    try:
+        tard_info = {}
+        for w in range(args['scenarios']):
+            for criterion in args['tard_criteria_for_report']:
+                tard_info['%d, %.1f' % (w, criterion)] = (
+                    safe_div(sum(sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0)
+                             , sum(1 for key in sim_pat_info[w].keys()
+                                   if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0)),
+                    safe_div(sum(sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0),
+                             sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0)),
+                    safe_div(sum(sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1),
+                             sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1)),
+                    safe_div(sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0),
+                             sum(1 for key in sim_pat_info[w].keys())),
+                    safe_div(sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0)
+                             , sum(1 for key in sim_pat_info[w].keys() if key[1] == 0)),
+                    safe_div(sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1)
+                             , sum(1 for key in sim_pat_info[w].keys() if key[1] == 1)),
+                    safe_div(sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0)
+                             , sum(1 for key in sim_pat_info[w].keys())),
+                    safe_div(sum(1 for key in sim_pat_info[w].keys()
+                                 if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1)
+                             , sum(1 for key in sim_pat_info[w].keys())),
+                    sum(1 for key in sim_pat_info[w].keys()),
+                    sum(1 for key in sim_pat_info[w].keys() if key[1] == 0),
+                    sum(1 for key in sim_pat_info[w].keys() if key[1] == 1),
+                    sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][key[1]] * args['time_unit'] - criterion > 0),
+                    sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][0] * args['time_unit'] - criterion > 0 and key[1] == 0),
+                    sum(1 for key in sim_pat_info[w].keys() if sim_pat_info[w][key][7] - args['thd'][1] * args['time_unit'] - criterion > 0 and key[1] == 1)
+                )
+
+        for criterion in args['tard_criteria_for_report']:
+            avg_temp = []
+            for i in range(14):
+                avg_temp.append(sum(tard_info['%d, %.1f' % (w, criterion)][i] for w in range(args['scenarios'])) / args['scenarios'])
+            tard_info['avg, %.1f' % criterion] = tuple(avg_temp)
+
+        for key in tard_info.keys():
+            if key[:3] == 'avg':
+                tard_info[key] = "%.2f, %.2f, %.2f, %.4f, %.4f, %.4f, %.4f, %.4f, %.1f, %.1f, %.1f, %.1f, %.1f, %.1f" % tard_info[key]
+            else:
+                tard_info[key] = "%.2f, %.2f, %.2f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %d" % tard_info[key]
+        write_data(args, data=tard_info, filename="tardiness_세부정보",
+                   head="W, tard초과시간기준,"
+                        "tard기준넘긴환자의 tard평균(전체), (응급), (비응급)," 
+                        "tard기준넘긴비율(%)(전체/전체), (응급/응급), (비응급/비응급)," 
+                        "(응급/전체), (비응급/전체), 전체환자수, 응급환자수, 비응급환자수,"
+                        "tard기준넘긴환자수(전체), (응급), (비응급)")
+    except:
+        print("write_data_error: tardiness_세부정보.csv")
 
 
 def write_data(args, data, filename, head=False, list_2D=False, AD_model=False):
